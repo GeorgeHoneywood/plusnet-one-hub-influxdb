@@ -62,7 +62,7 @@ class PlusnetHubOne:
             self.login()
             return self.collect_stats()
 
-        logging.info(f"authorised successfully with cookie: {cookie}")
+        logging.info(f"authorized successfully with cookie: {cookie}")
 
         stats = conn_info_soup.find(
             "td", text="Data Transmitted/Received:"
