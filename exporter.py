@@ -35,21 +35,15 @@ class PlusnetHubOne:
 
         auth_key = login_soup.find("input", {"name": "auth_key"})["value"]
         post_token = login_soup.find("input", {"name": "post_token"})["value"]
-        # request_id = login_soup.find("input", {"name": "request_id"})["value"]
 
         # the md5_pass value is the md5'd concatenation of the plaintext password and the auth_key (retrieved from the login form)
         md5_pass = self.password + auth_key
         md5_pass = hashlib.md5(md5_pass.encode()).hexdigest()
 
-        # commented out bits don't seem to be used
         form_data = {
-            # "request_id": request_id,
             "active_page": "9148",
-            # "active_page_str": "bt_login",
             "mimic_button_field": "submit_button_login_submit: ..",
-            # "button_value": "",
             "post_token": post_token,
-            # "password_205907156": "",
             "md5_pass": md5_pass,
             "auth_key": auth_key,
         }
