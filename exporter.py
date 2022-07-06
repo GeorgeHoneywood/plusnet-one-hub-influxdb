@@ -27,6 +27,10 @@ class PlusnetHubOne:
         # will redirect to the login page first, if we aren't authenticated
         login_page = self.session.get(self.base_url + self.CONN_INFO_SUFFIX)
 
+        if "No more than 100 sessions at a time are allowed. Please wait until open sessions expire." in login_page.text:
+            logging.fatal("too many sessions open, please wait")
+            exit(1)
+
         login_soup = bs(login_page.text, features="html.parser")
 
         auth_key = login_soup.find("input", {"name": "auth_key"})["value"]
