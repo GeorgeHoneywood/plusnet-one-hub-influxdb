@@ -3,11 +3,13 @@
 import argparse
 import functools
 import hashlib
+import json
 import logging
+import re
 import sys
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 from bs4 import BeautifulSoup as bs
@@ -16,16 +18,34 @@ from influxdb import InfluxDBClient
 from dehumanise import human2bytes
 
 
-@dataclass(kw_only=True)
-class Stats:
-    transmitted: int
-    received: int
-    firmware_updated: float
-
-
 class PlusnetHubOne:
-    CONN_INFO_SUFFIX = "?active_page=9121"
+    CONN_INFO_SUFFIX = "?active_page=9143"
+    REBOOT_TIME_PATTERN = re.compile(r"wait = (\d*);")
+
     session = requests.Session()
+
+    @dataclass(kw_only=True)
+    class Stats:
+        total_tx: int
+        total_rx: int
+
+        firmware_update_datetime: int
+        reboot_datetime: int
+
+        data_rate_tx: int
+        data_rate_rx: int
+
+        max_data_rate_tx: int
+        max_data_rate_rx: int
+
+        noise_margin_tx: float
+        noise_margin_rx: float
+
+        line_attenuation_tx: float
+        line_attenuation_rx: float
+
+        signal_attenuation_tx: float
+        signal_attenuation_rx: float
 
     def __init__(self, password: str, router_ip: str):
         self.password = password
@@ -37,7 +57,7 @@ class PlusnetHubOne:
             timeout=3,
         )
 
-    def login(self):
+    def login(self) -> None:
         # will redirect to the login page first, if we aren't authenticated
         login_page = self.session.get(self.base_url + self.CONN_INFO_SUFFIX)
 
@@ -81,24 +101,59 @@ class PlusnetHubOne:
 
         logging.info(f"authorized successfully with cookie: {cookie}")
 
-        stats = conn_info_soup.find(
-            "td", text="Data Transmitted/Received:"
-        ).next_sibling.text.split(  # type: ignore
-            "/"
-        )
-        transmitted, received = [human2bytes(value.strip()) for value in stats]
-
+        usage = conn_info_soup.find(
+            "td", text="11. Data sent/received:"
+        ).next_sibling.text.split("/")
+        transmitted, received = [human2bytes(value.strip()) for value in usage]
         logging.info(f"transmitted: {transmitted} bytes, received: {received} bytes")
 
-        firmware_updated = conn_info_soup.find(id="footer").text.split("Last updated ")[  # type: ignore
-            1
-        ]
-        firmware_updated = datetime.strptime(firmware_updated, "%d/%m/%y")
+        firmware_update_string = conn_info_soup.find(
+            "td", text="3. Firmware version:"
+        ).next_sibling.text.split("Last updated ")[1]
+        firmware_update_datetime = datetime.strptime(firmware_update_string, "%d/%m/%y")
 
-        return Stats(
-            transmitted=transmitted,
-            received=received,
-            firmware_updated=time.mktime(firmware_updated.timetuple()),
+        seconds_since_reboot = self.REBOOT_TIME_PATTERN.search(conn_info_page.text).group(1)  # type: ignore
+        reboot_datetime = datetime.now() - timedelta(seconds=int(seconds_since_reboot))
+
+        data_rate_tx, data_rate_rx = conn_info_soup.find(
+            "td", text="6. Data rate:"
+        ).next_sibling.text.split("/")
+
+        max_data_rate_tx, max_data_rate_rx = conn_info_soup.find(
+            "td", text="7. Maximum data rate:"
+        ).next_sibling.text.split("/")
+
+        noise_margin_tx, noise_margin_rx = conn_info_soup.find(
+            "td", text="8. Noise margin:"
+        ).next_sibling.text.split("/")
+
+        line_attenuation_tx, line_attenuation_rx = conn_info_soup.find(
+            "td", text="9. Line attenuation:"
+        ).next_sibling.text.split("/")
+
+        signal_attenuation_tx, signal_attenuation_rx = conn_info_soup.find(
+            "td", text="10. Signal attenuation:"
+        ).next_sibling.text.split("/")
+
+        return self.Stats(
+            total_tx=transmitted,
+            total_rx=received,
+            firmware_update_datetime=int(
+                time.mktime(firmware_update_datetime.timetuple()),
+            ),
+            reboot_datetime=int(
+                time.mktime(reboot_datetime.timetuple()),
+            ),
+            data_rate_tx=int(data_rate_tx),
+            data_rate_rx=int(data_rate_rx),
+            max_data_rate_tx=int(max_data_rate_tx),
+            max_data_rate_rx=int(max_data_rate_rx),
+            noise_margin_tx=float(noise_margin_tx),
+            noise_margin_rx=float(noise_margin_rx),
+            line_attenuation_tx=float(line_attenuation_tx),
+            line_attenuation_rx=float(line_attenuation_rx),
+            signal_attenuation_tx=float(signal_attenuation_tx),
+            signal_attenuation_rx=float(signal_attenuation_rx),
         )
 
 
