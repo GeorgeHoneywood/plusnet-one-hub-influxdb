@@ -1,43 +1,60 @@
 #!/usr/bin/env python3
 
+import argparse
+import functools
 import hashlib
 import logging
-import os
 import sys
 import time
-import requests
-import argparse
-
-from bs4 import BeautifulSoup as bs
+from dataclasses import asdict, dataclass
 from datetime import datetime
+
+import requests
+from bs4 import BeautifulSoup as bs
 from influxdb import InfluxDBClient
 
 from dehumanise import human2bytes
+
+
+@dataclass(kw_only=True)
+class Stats:
+    transmitted: int
+    received: int
+    firmware_updated: float
 
 
 class PlusnetHubOne:
     CONN_INFO_SUFFIX = "?active_page=9121"
     session = requests.Session()
 
-    def __init__(self, password, router_ip):
+    def __init__(self, password: str, router_ip: str):
         self.password = password
         self.base_url = f"http://{router_ip}/index.cgi"
+        # set timeout for all requests in session
+        # see: https://github.com/psf/requests/issues/2011#issuecomment-490050252
+        self.session.request = functools.partial(  # type: ignore
+            self.session.request,
+            timeout=3,
+        )
 
     def login(self):
         # will redirect to the login page first, if we aren't authenticated
         login_page = self.session.get(self.base_url + self.CONN_INFO_SUFFIX)
 
-        if "No more than 100 sessions at a time are allowed. Please wait until open sessions expire." in login_page.text:
+        if (
+            "No more than 100 sessions at a time are allowed. Please wait until open sessions expire."
+            in login_page.text
+        ):
             logging.fatal("too many sessions open, please wait")
             exit(1)
 
         login_soup = bs(login_page.text, features="html.parser")
 
-        auth_key = login_soup.find("input", {"name": "auth_key"})["value"]
-        post_token = login_soup.find("input", {"name": "post_token"})["value"]
+        auth_key: str = login_soup.find("input", {"name": "auth_key"})["value"]  # type: ignore
+        post_token: str = login_soup.find("input", {"name": "post_token"})["value"]  # type: ignore
 
         # the md5_pass value is the md5'd concatenation of the plaintext password and the auth_key (retrieved from the login form)
-        md5_pass = self.password + auth_key
+        md5_pass: str = self.password + auth_key
         md5_pass = hashlib.md5(md5_pass.encode()).hexdigest()
 
         form_data = {
@@ -51,7 +68,7 @@ class PlusnetHubOne:
         # authorizes our cookie
         self.session.post(self.base_url, data=form_data)
 
-    def collect_stats(self):
+    def collect_stats(self) -> Stats:
         conn_info_page = self.session.get(self.base_url + self.CONN_INFO_SUFFIX)
         conn_info_soup = bs(conn_info_page.text, features="html.parser")
 
@@ -66,21 +83,23 @@ class PlusnetHubOne:
 
         stats = conn_info_soup.find(
             "td", text="Data Transmitted/Received:"
-        ).next_sibling.text.split("/")
+        ).next_sibling.text.split(  # type: ignore
+            "/"
+        )
         transmitted, received = [human2bytes(value.strip()) for value in stats]
 
         logging.info(f"transmitted: {transmitted} bytes, received: {received} bytes")
 
-        firmware_updated = conn_info_soup.find(id="footer").text.split("Last updated ")[
+        firmware_updated = conn_info_soup.find(id="footer").text.split("Last updated ")[  # type: ignore
             1
         ]
         firmware_updated = datetime.strptime(firmware_updated, "%d/%m/%y")
 
-        return {
-            "transmitted": transmitted,
-            "received": received,
-            "firmware_updated": time.mktime(firmware_updated.timetuple()),
-        }
+        return Stats(
+            transmitted=transmitted,
+            received=received,
+            firmware_updated=time.mktime(firmware_updated.timetuple()),
+        )
 
 
 def main():
@@ -155,7 +174,7 @@ def main():
                     {
                         "measurement": "data_stats",
                         "time": datetime.utcnow(),
-                        "fields": stats,
+                        "fields": asdict(stats),
                     }
                 ]
             )
@@ -173,7 +192,4 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\nexiting!")
-        try:
-            sys.exit(0)
-        except SystemExit:
-            os._exit(0)
+        sys.exit(0)

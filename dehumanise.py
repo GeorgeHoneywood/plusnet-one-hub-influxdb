@@ -1,5 +1,6 @@
 ## {{{ http://code.activestate.com/recipes/578019/ (r15)
 #!/usr/bin/env python
+# type: ignore
 
 """
 Bytes-to-human / human-to-bytes converter.
@@ -28,7 +29,7 @@ SYMBOLS = {
 }
 
 
-def human2bytes(s):
+def human2bytes(s: str):
     """
     Attempts to guess the string format based on default symbols
     set and return the corresponding bytes as an integer.
@@ -58,7 +59,7 @@ def human2bytes(s):
     """
     init = s
     num = ""
-    while s and s[0:1].isdigit() or s[0:1] == ".":
+    while s and s[0:1].isdigit() or s[0:1] == ".":  
         num += s[0]
         s = s[1:]
     num = float(num)
