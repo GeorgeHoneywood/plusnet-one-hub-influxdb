@@ -105,7 +105,6 @@ class PlusnetHubOne:
             "td", text="11. Data sent/received:"
         ).next_sibling.text.split("/")
         transmitted, received = [human2bytes(value.strip()) for value in usage]
-        logging.info(f"transmitted: {transmitted} bytes, received: {received} bytes")
 
         firmware_update_string = conn_info_soup.find(
             "td", text="3. Firmware version:"
@@ -223,6 +222,7 @@ def main():
 
         try:
             stats = router.collect_stats()
+            logging.info(f"collected: {stats}")
 
             client.write_points(
                 [
